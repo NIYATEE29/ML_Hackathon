@@ -8,4 +8,5 @@ MODELS_DIR = ROOT / "models"
 RESULTS_DIR = ROOT / "results"
 
 SEED = 42
-PROJECTED_CRS = "EPSG:32630"  # UTM zone 30N (study area is ~ lon -1.8, lat 53.0)
+# NOTE: trips are located all over the world, so there is no single projected CRS.
+# src/data/loader.py projects each trip with its own local azimuthal-equidistant CRS.

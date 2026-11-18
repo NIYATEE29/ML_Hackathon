@@ -13,9 +13,17 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
-from src.config import PROJECTED_CRS, RAW_DIR
+from src.config import RAW_DIR
 
-_to_m = Transformer.from_crs("EPSG:4326", PROJECTED_CRS, always_xy=True)
+
+def _local_transformer(lon0: float, lat0: float) -> Transformer:
+    """Per-trip azimuthal-equidistant projection (metres) centred on the trip.
+
+    Trips are spread across the whole world (lon -100..137, lat -35..62), so no single
+    fixed CRS is valid. Distances are near-exact close to the trip centre.
+    """
+    crs = f"+proj=aeqd +lat_0={lat0} +lon_0={lon0} +datum=WGS84 +units=m +no_defs"
+    return Transformer.from_crs("EPSG:4326", crs, always_xy=True)
 
 
 @dataclass
@@ -32,8 +40,8 @@ def _read(path: Path, names, dtype=None) -> pd.DataFrame:
     return pd.read_csv(path, sep=r"\s+", header=None, names=names, dtype=dtype)
 
 
-def _add_xy(df: pd.DataFrame) -> pd.DataFrame:
-    x, y = _to_m.transform(df["lon"].to_numpy(), df["lat"].to_numpy())
+def _add_xy(df: pd.DataFrame, tf: Transformer) -> pd.DataFrame:
+    x, y = tf.transform(df["lon"].to_numpy(), df["lat"].to_numpy())
     df["x"], df["y"] = x, y
     return df
 
@@ -44,8 +52,10 @@ def list_trips(partition: str, raw_dir: Path = RAW_DIR) -> list[str]:
 
 def load_trip(partition: str, trip_id: str, raw_dir: Path = RAW_DIR) -> Trip:
     d = raw_dir / partition / trip_id
-    track = _add_xy(_read(d / f"{trip_id}.track", ["lon", "lat", "t"]))
-    nodes = _add_xy(_read(d / f"{trip_id}.nodes", ["lon", "lat"]))
+    track = _read(d / f"{trip_id}.track", ["lon", "lat", "t"])
+    tf = _local_transformer(track["lon"].mean(), track["lat"].mean())
+    track = _add_xy(track, tf)
+    nodes = _add_xy(_read(d / f"{trip_id}.nodes", ["lon", "lat"]), tf)
     arcs = _read(d / f"{trip_id}.arcs", ["from_node", "to_node"], dtype=int)
     route = _read(d / f"{trip_id}.route", ["arc_id"], dtype=int)["arc_id"].to_numpy()
     return Trip(trip_id, partition, track, nodes, arcs, route)
