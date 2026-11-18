@@ -6,7 +6,7 @@ Protocol (shared with every other model):
   3. Training-set metrics are logged too, as overfitting evidence.
 Scalers live inside the sklearn Pipeline, so they are fitted on training folds only.
 
-Usage: python -m src.models.run_baselines [logreg] [rf]
+Usage: python -m src.models.run_baselines [logreg] [rf] [xgb]
 """
 import json
 import sys
@@ -35,7 +35,20 @@ MODELS = {
         params=dict(n_estimators=100, max_depth=None, min_samples_leaf=20, max_features="sqrt", max_samples=0.25),
         build=lambda p: RandomForestClassifier(n_jobs=2, random_state=SEED, **p),
     ),
+    # Boosting. Hyper-parameters are the ones our XGBoost teammate chose (src/models/xgboost_model.py);
+    # here they run on the shared 27-feature table, shared folds and shared metrics.
+    "xgb": dict(
+        family="Gradient boosting (trees)",
+        params=dict(n_estimators=300, max_depth=6, learning_rate=0.05, subsample=0.8, colsample_bytree=0.8,
+                    min_child_weight=1, reg_lambda=1.0, tree_method="hist"),
+        build=lambda p: _xgb(p),
+    ),
 }
+
+
+def _xgb(p):
+    from xgboost import XGBClassifier  # imported lazily so the other models do not need xgboost installed
+    return XGBClassifier(objective="binary:logistic", eval_metric="logloss", n_jobs=2, random_state=SEED, **p)
 
 
 def fit_eval(name, tr, te):
@@ -80,4 +93,4 @@ def main(names):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:] or list(MODELS))
+    main(sys.argv[1:] or ["logreg", "rf"])
