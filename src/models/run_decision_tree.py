@@ -18,6 +18,7 @@ Writes: results/logs/dtree_depth_sweep.csv
         results/figures/dtree_depth.png
         models/dtree.joblib
 """
+
 import json
 import time
 
@@ -59,11 +60,7 @@ def fit_eval(max_depth, tr, te):
     p_tr = model.predict_proba(X_tr)[:, 1]
 
     out = {f"test_{k}": v for k, v in evaluate(te, p_te).items()}
-    out.update({
-        f"train_{k}": v
-        for k, v in evaluate(tr, p_tr).items()
-        if k in ("top1_acc", "macro_f1", "log_loss")
-    })
+    out.update({f"train_{k}": v for k, v in evaluate(tr, p_tr).items() if k in ("top1_acc", "macro_f1", "log_loss")})
     n_points = max(1, len(te[["trip_id", "pt"]].drop_duplicates()))
     out.update(
         fit_seconds=fit_s,
@@ -135,9 +132,7 @@ def main():
 
     sweep_df = pd.DataFrame(sweep)
     sweep_df.to_csv(RESULTS_DIR / "logs" / "dtree_depth_sweep.csv", index=False)
-    pd.concat(all_folds, ignore_index=True).to_csv(
-        RESULTS_DIR / "logs" / "dtree_cv_folds.csv", index=False
-    )
+    pd.concat(all_folds, ignore_index=True).to_csv(RESULTS_DIR / "logs" / "dtree_cv_folds.csv", index=False)
 
     # --- pick on CV macro F1 (the agreed primary metric) --------------------
     best = sweep_df.loc[sweep_df.cv_macro_f1_mean.idxmax()]
@@ -146,9 +141,9 @@ def main():
 
     model, m = fit_eval(best_depth, train, stest)
     joblib.dump(
-        dict(model=model, features=FEATURES,
-             params=dict(max_depth=best_depth, min_samples_leaf=MIN_SAMPLES_LEAF)),
-        MODELS_DIR / "dtree.joblib", compress=3,
+        dict(model=model, features=FEATURES, params=dict(max_depth=best_depth, min_samples_leaf=MIN_SAMPLES_LEAF)),
+        MODELS_DIR / "dtree.joblib",
+        compress=3,
     )
 
     imp = (
@@ -160,11 +155,15 @@ def main():
 
     # Summary in the same schema as the logreg / rf summaries.
     summ = dict(
-        model="dtree", family=FAMILY,
+        model="dtree",
+        family=FAMILY,
         params=dict(max_depth=best_depth, min_samples_leaf=MIN_SAMPLES_LEAF),
-        seed=SEED, n_features=len(FEATURES),
-        cv_macro_f1_mean=best.cv_macro_f1_mean, cv_macro_f1_std=best.cv_macro_f1_std,
-        cv_top1_acc_mean=best.cv_top1_acc_mean, cv_log_loss_mean=best.cv_log_loss_mean,
+        seed=SEED,
+        n_features=len(FEATURES),
+        cv_macro_f1_mean=best.cv_macro_f1_mean,
+        cv_macro_f1_std=best.cv_macro_f1_std,
+        cv_top1_acc_mean=best.cv_top1_acc_mean,
+        cv_log_loss_mean=best.cv_log_loss_mean,
         cv_route_continuity_mean=best.cv_route_continuity_mean,
         cv_fit_seconds_mean=best.cv_fit_seconds_mean,
         **{f"student_{k.replace('test_', '')}": v for k, v in m.items() if k.startswith("test_")},
@@ -173,7 +172,8 @@ def main():
         final_fit_seconds=m["fit_seconds"],
         student_predict_seconds=m["predict_seconds"],
         student_inference_ms_per_point=m["inference_ms_per_point"],
-        n_leaves=m["n_leaves"], actual_depth=m["actual_depth"],
+        n_leaves=m["n_leaves"],
+        actual_depth=m["actual_depth"],
     )
     (RESULTS_DIR / "logs" / "dtree_summary.json").write_text(json.dumps(summ, indent=1, default=float))
 
@@ -188,14 +188,21 @@ def main():
 
     # --- depth plot ---------------------------------------------------------
     import matplotlib
+
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     x = [str(v) for v in sweep_df.max_depth]
     fig, ax = plt.subplots(figsize=(7, 4.5))
     ax.plot(x, sweep_df.train_macro_f1_mean, "o-", label="train macro F1")
-    ax.errorbar(x, sweep_df.cv_macro_f1_mean, yerr=sweep_df.cv_macro_f1_std,
-                fmt="s-", capsize=3, label="CV macro F1 (5 trip-grouped folds)")
+    ax.errorbar(
+        x,
+        sweep_df.cv_macro_f1_mean,
+        yerr=sweep_df.cv_macro_f1_std,
+        fmt="s-",
+        capsize=3,
+        label="CV macro F1 (5 trip-grouped folds)",
+    )
     ax.set_xlabel("max_depth")
     ax.set_ylabel("macro F1")
     ax.set_title(f"Decision Tree: train vs CV macro F1 (min_samples_leaf={MIN_SAMPLES_LEAF})")

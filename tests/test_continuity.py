@@ -4,6 +4,7 @@
 it sits near 0.75 before a model does anything. `route_continuity_transitions`
 only looks at consecutive points whose arc actually changed.
 """
+
 import pandas as pd
 
 from src.models.common import evaluate
@@ -21,7 +22,7 @@ def _trip():
     rows = []
     for pt, (arc, u, v) in real.items():
         rows.append((pt, arc, u, v, 1, 0.9))
-        rows.append((pt, 99, 5, 6, 0, 0.1))   # decoy
+        rows.append((pt, 99, 5, 6, 0, 0.1))  # decoy
     df = pd.DataFrame(rows, columns=["pt", "cand_arc", "from_node", "to_node", "label", "p"])
     df["trip_id"], df["pt_has_label"] = "t", True
     return df

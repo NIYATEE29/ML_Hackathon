@@ -18,6 +18,7 @@ metric. Needs data/raw present for the road networks.
 Usage:  python -m src.models.route_diagnostics [logreg rf dtree ...]
 Writes: results/tables/route_continuity_diagnostic.csv
 """
+
 import sys
 from collections import defaultdict, deque
 
@@ -76,9 +77,11 @@ def diagnose(df: pd.DataFrame, proba: np.ndarray, label: str, adj_cache: dict) -
     changed = (arc[1:] != arc[:-1]) & (tid[1:] == tid[:-1])
     idx = np.flatnonzero(changed)
 
-    h = np.array([
-        hops_between(adj_cache[tid[i]], int(arc[i]), int(arc[i + 1])) for i in idx
-    ]) if idx.size else np.empty(0, int)
+    h = (
+        np.array([hops_between(adj_cache[tid[i]], int(arc[i]), int(arc[i + 1])) for i in idx])
+        if idx.size
+        else np.empty(0, int)
+    )
 
     row = {"model": label, "n_transitions": int(h.size)}
     for k in REPORT_HOPS:

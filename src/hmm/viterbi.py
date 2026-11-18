@@ -26,6 +26,7 @@ Missing candidates
     A point with no candidate gets no decoded arc (-1); the chain bridges over it using the
     elapsed time between the neighbouring decoded points.
 """
+
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -70,10 +71,11 @@ class ArcGraph:
         for d in range(1, BFS_DEPTH + 1):
             nxt = []
             for u in frontier:
-                for v in self.dst[self.ptr[u]:self.ptr[u + 1]]:
+                for v in self.dst[self.ptr[u] : self.ptr[u + 1]]:
                     v = int(v)
                     if v not in dist:
-                        dist[v] = d; nxt.append(v)
+                        dist[v] = d
+                        nxt.append(v)
             if not nxt:
                 break
             frontier = nxt
@@ -93,7 +95,11 @@ def _transition(prev_arc, prev_from, prev_to, cur_arc, cur_from, cur_to, graph, 
                 T[i, j] = -P.reverse_penalty
             else:
                 h = reach.get(int(cur_from[j]))
-                T[i, j] = -(P.switch_penalty + P.hop_penalty * h) if (h is not None and h <= h_eff) else -P.disconnected_penalty
+                T[i, j] = (
+                    -(P.switch_penalty + P.hop_penalty * h)
+                    if (h is not None and h <= h_eff)
+                    else -P.disconnected_penalty
+                )
     return T
 
 
@@ -114,7 +120,7 @@ def decode_trip(cands: pd.DataFrame, graph: ArcGraph, params: HMMParams | None =
     dt_prev = np.expm1(cands["log_dt_prev"].to_numpy())
 
     n = len(starts)
-    delta = [emis[starts[0]:ends[0]]]
+    delta = [emis[starts[0] : ends[0]]]
     back = []
     for k in range(1, n):
         s0, e0, s1, e1 = starts[k - 1], ends[k - 1], starts[k], ends[k]

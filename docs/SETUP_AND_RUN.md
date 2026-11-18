@@ -143,6 +143,8 @@ python -m src.models.run_decision_tree  # Decision Tree
 python -m src.models.run_mlp            # MLP (shared pipeline)
 python -m src.models.compare            # comparison table + figures -> results\tables, results\figures
 python -m src.hmm.run_hmm_eval          # HMM/Viterbi decoder tuning + evaluation (uses the Random Forest)
+python -m src.models.confusion          # confusion matrices -> results\tables, results\figures
+python reports/make_report_tables.py   # fills the report tables from the logs -> reports\TECHNICAL_REPORT.md
 ```
 `data\processed\` is not in git, so every teammate who wants to retrain runs `build_table` first.
 Results can differ in the 3rd decimal between machines; quote one machine's numbers in the report.
@@ -195,3 +197,6 @@ Models that have decoder settings: `rf`, `xgb_tuned`. For another model, first r
 | UI | `ui/index.html`, `ui/app.js` |
 | Earlier MLP-only backend (kept, not used by the demo) | `api/legacy_main.py`, `src/hmm/legacy_viterbi.py`, `src/pipeline.py`, `ui/app.py` |
 | Shared context for AI assistants | `AGENTS.md` |
+
+
+**Note on `archive/`:** earlier individual pipelines (Abhijith's MLP, Nikhil's XGBoost) live in `archive/` and are not part of the demo or the reported results. Their tests run with `python -m pytest archive`.

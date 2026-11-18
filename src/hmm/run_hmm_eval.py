@@ -6,6 +6,7 @@ reported once on student_test. Evaluator data is never used.
 
 Usage: python -m src.hmm.run_hmm_eval --model rf --trials 30
 """
+
 import argparse
 import json
 import time
@@ -43,7 +44,9 @@ def decode_rows(df, p, part, params, trips_cache):
         graph, _ = trips_cache[tid]
         dec = decode_trip(g, graph, params)
         key = dec.assign(hit=1)
-        merged = g[["pt", "cand_arc"]].reset_index().merge(key[["pt", "cand_arc", "hit"]], on=["pt", "cand_arc"], how="left")
+        merged = (
+            g[["pt", "cand_arc"]].reset_index().merge(key[["pt", "cand_arc", "hit"]], on=["pt", "cand_arc"], how="left")
+        )
         hmm[merged["index"].to_numpy()] = merged["hit"].fillna(0).to_numpy()
         decoded[tid] = dec
     return hmm, decoded
@@ -59,15 +62,24 @@ def compare(df, p_clf, p_hmm, decoded, trips_cache):
     for name, p in (("classifier", p_clf), ("hmm", p_hmm)):
         m = evaluate(df, p)
         if name == "hmm":
-            m.pop("log_loss")          # decoded 0/1 scores have no probability meaning
+            m.pop("log_loss")  # decoded 0/1 scores have no probability meaning
         out[name] = m
     rows = []
     for tid, g in df.assign(pc=p_clf).groupby("trip_id", sort=False):
         ref = trips_cache[tid][1]
         clf_top = g.loc[g.groupby("pt").pc.idxmax(), "cand_arc"]
-        rows.append(dict(trip_id=tid, route_f1_classifier=route_f1(clf_top, ref), route_f1_hmm=route_f1(decoded[tid].cand_arc, ref)))
+        rows.append(
+            dict(
+                trip_id=tid,
+                route_f1_classifier=route_f1(clf_top, ref),
+                route_f1_hmm=route_f1(decoded[tid].cand_arc, ref),
+            )
+        )
     rf = pd.DataFrame(rows)
-    out["classifier"]["route_f1_mean"], out["hmm"]["route_f1_mean"] = rf.route_f1_classifier.mean(), rf.route_f1_hmm.mean()
+    out["classifier"]["route_f1_mean"], out["hmm"]["route_f1_mean"] = (
+        rf.route_f1_classifier.mean(),
+        rf.route_f1_hmm.mean(),
+    )
     return out, rf
 
 
@@ -76,8 +88,16 @@ def per_trip(df, p_clf, p_hmm):
     for tid in df.trip_id.unique():
         m = (df.trip_id == tid).to_numpy()
         a, b = evaluate(df[m], p_clf[m]), evaluate(df[m], p_hmm[m])
-        rows.append(dict(trip_id=tid, n_points=a["n_points"], top1_classifier=a["top1_acc"], top1_hmm=b["top1_acc"],
-                         continuity_classifier=a["route_continuity"], continuity_hmm=b["route_continuity"]))
+        rows.append(
+            dict(
+                trip_id=tid,
+                n_points=a["n_points"],
+                top1_classifier=a["top1_acc"],
+                top1_hmm=b["top1_acc"],
+                continuity_classifier=a["route_continuity"],
+                continuity_hmm=b["route_continuity"],
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -88,8 +108,10 @@ def make_oof(model_name):
     if path.exists():
         return full.assign(p=pd.read_parquet(path)["p"].to_numpy())
     from src.models.run_baselines import MODELS
+
     spec = MODELS[model_name]
-    folds = get_folds(labelled(full)); full["fold"] = full.trip_id.map(folds)
+    folds = get_folds(labelled(full))
+    full["fold"] = full.trip_id.map(folds)
     p = np.zeros(len(full))
     for f in sorted(full.fold.unique()):
         tr = full[(full.fold != f) & full.pt_has_label]
@@ -126,16 +148,33 @@ def tune(oof, trials, n_trips=20, max_pts=4000):
 
     study = optuna.create_study(direction="maximize", sampler=optuna.samplers.TPESampler(seed=SEED))
     base = HMMParams()
-    study.enqueue_trial({k: getattr(base, k) for k in ("emission_weight", "switch_penalty", "hop_penalty", "reverse_penalty", "disconnected_penalty", "max_hops", "hops_per_sec")})
-    t0 = time.time(); study.optimize(objective, n_trials=trials)
-    print(f"tuning done in {time.time()-t0:.0f}s, best top1 {study.best_value:.4f}", flush=True)
+    study.enqueue_trial(
+        {
+            k: getattr(base, k)
+            for k in (
+                "emission_weight",
+                "switch_penalty",
+                "hop_penalty",
+                "reverse_penalty",
+                "disconnected_penalty",
+                "max_hops",
+                "hops_per_sec",
+            )
+        }
+    )
+    t0 = time.time()
+    study.optimize(objective, n_trials=trials)
+    print(f"tuning done in {time.time() - t0:.0f}s, best top1 {study.best_value:.4f}", flush=True)
     return study, sub
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--model", default="rf"); ap.add_argument("--trials", type=int, default=30)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", default="rf")
+    ap.add_argument("--trials", type=int, default=30)
     a = ap.parse_args()
-    (RESULTS_DIR / "logs").mkdir(parents=True, exist_ok=True); (RESULTS_DIR / "tables").mkdir(parents=True, exist_ok=True)
+    (RESULTS_DIR / "logs").mkdir(parents=True, exist_ok=True)
+    (RESULTS_DIR / "tables").mkdir(parents=True, exist_ok=True)
 
     # 1) tune decoder on train OOF
     oof = make_oof(a.model)
@@ -148,7 +187,10 @@ def main():
     cache = {}
     hmm_def, _ = decode_rows(sub, sub.p.to_numpy(), "train", HMMParams(), cache)
     hmm_best, _ = decode_rows(sub, sub.p.to_numpy(), "train", best, cache)
-    tune_rec = {n: evaluate(sub, x) for n, x in (("classifier_only", sub.p.to_numpy()), ("hmm_default", hmm_def), ("hmm_tuned", hmm_best))}
+    tune_rec = {
+        n: evaluate(sub, x)
+        for n, x in (("classifier_only", sub.p.to_numpy()), ("hmm_default", hmm_def), ("hmm_tuned", hmm_best))
+    }
 
     # 3) report once on student_test
     st = load_table("student_test")
@@ -157,18 +199,33 @@ def main():
     cache = {}
     res = {}
     for name, P in (("hmm_default", HMMParams()), ("hmm_tuned", best)):
-        t0 = time.time(); hmm, dec = decode_rows(st, p_clf, "student_test", P, cache)
+        t0 = time.time()
+        hmm, dec = decode_rows(st, p_clf, "student_test", P, cache)
         out, rf = compare(st, p_clf, hmm, dec, cache)
         res[name] = dict(metrics=out["hmm"], decode_seconds=time.time() - t0)
         res["classifier_only"] = dict(metrics=out["classifier"])
         if name == "hmm_tuned":
-            pt = per_trip(st, p_clf, hmm).merge(rf, on="trip_id"); pt.to_csv(RESULTS_DIR / "tables" / f"hmm_vs_classifier_{a.model}_per_trip.csv", index=False)
-    summary = dict(model=a.model, decoder_params=best.as_dict(), tuning=dict(trials=a.trials, n_train_trips=int(sub.trip_id.nunique()), objective="decoded Top-1 on train OOF", best_value=study.best_value, results_on_tuning_trips=tune_rec), student_test=res)
+            pt = per_trip(st, p_clf, hmm).merge(rf, on="trip_id")
+            pt.to_csv(RESULTS_DIR / "tables" / f"hmm_vs_classifier_{a.model}_per_trip.csv", index=False)
+    summary = dict(
+        model=a.model,
+        decoder_params=best.as_dict(),
+        tuning=dict(
+            trials=a.trials,
+            n_train_trips=int(sub.trip_id.nunique()),
+            objective="decoded Top-1 on train OOF",
+            best_value=study.best_value,
+            results_on_tuning_trips=tune_rec,
+        ),
+        student_test=res,
+    )
     (RESULTS_DIR / "logs" / f"hmm_{a.model}_summary.json").write_text(json.dumps(summary, indent=1, default=float))
     c, d, t = (res[k]["metrics"] for k in ("classifier_only", "hmm_default", "hmm_tuned"))
     print("\nSTUDENT-TEST      top1    macroF1  continuity  routeF1")
     for n, m in (("classifier-only", c), ("HMM default", d), ("HMM tuned", t)):
-        print(f"{n:16s} {m['top1_acc']:.4f}  {m['macro_f1']:.4f}   {m['route_continuity']:.4f}     {m['route_f1_mean']:.4f}")
+        print(
+            f"{n:16s} {m['top1_acc']:.4f}  {m['macro_f1']:.4f}   {m['route_continuity']:.4f}     {m['route_f1_mean']:.4f}"
+        )
 
 
 if __name__ == "__main__":

@@ -1,22 +1,21 @@
+# core
 numpy
 pandas
 scipy
 scikit-learn
 xgboost
-lightgbm
 optuna
 pyproj
-networkx
-folium
-matplotlib
-seaborn
+pyarrow
 joblib
+# plotting and maps
+matplotlib
+folium
+# API
 fastapi
 uvicorn
 pydantic
-requests
+# tests and notebook
 pytest
-jupyter
-pyarrow
-streamlit
 httpx
+jupyter

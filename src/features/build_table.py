@@ -4,6 +4,7 @@ Usage:  python -m src.features.build_table
 Writes: data/processed/candidates_{train,student_test}.parquet
         results/tables/trip_quality.csv
 """
+
 import time
 
 import pandas as pd
@@ -23,9 +24,13 @@ def main():
             t0 = time.time()
             tab, info = build_trip_table(load_trip(part, tid))
             tab["trip_id"] = tab["trip_id"].astype(str)
-            tabs.append(tab); infos.append(info)
-            print(f"{part}/{tid}: pts={info['n_points']:6d} rows={len(tab):7d} "
-                  f"labelled={info['label_frac']:.3f} miss={info['candidate_miss_rate']:.3f} {time.time()-t0:.1f}s", flush=True)
+            tabs.append(tab)
+            infos.append(info)
+            print(
+                f"{part}/{tid}: pts={info['n_points']:6d} rows={len(tab):7d} "
+                f"labelled={info['label_frac']:.3f} miss={info['candidate_miss_rate']:.3f} {time.time() - t0:.1f}s",
+                flush=True,
+            )
         pd.concat(tabs, ignore_index=True).to_parquet(PROCESSED_DIR / f"candidates_{part}.parquet")
     pd.DataFrame(infos).to_csv(RESULTS_DIR / "tables" / "trip_quality.csv", index=False)
 
