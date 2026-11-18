@@ -17,3 +17,4 @@ pydantic
 requests
 pytest
 jupyter
+pyarrow
