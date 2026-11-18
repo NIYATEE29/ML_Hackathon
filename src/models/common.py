@@ -13,6 +13,16 @@ Definitions (observation = one GPS point with a reference label):
   * Candidate miss   : share of labelled points whose reference arc is not a candidate.
   * Route continuity : among consecutive points' top-1 arcs, share that are the same arc or
                        connected (to_node of previous == from_node of next).
+  * Route continuity (transitions): the same check restricted to consecutive points whose
+                       arc actually changes. The plain figure above counts "still on the
+                       same arc" as continuous, and with ~8 GPS points per 17 m arc about
+                       75-81% of consecutive pairs are same-arc, so it starts near 0.75
+                       before the model does anything and compresses every model into the
+                       top quarter of its range. Reference point: the ground-truth labels
+                       themselves score 0.9666 plain but only 0.8210 on transitions, because
+                       a route legitimately skips short arcs between two 1 Hz samples.
+                       Judge models against that 0.8210 ceiling, not against 1.0.
+                       See src/models/route_diagnostics.py for the hop-tolerant version.
 """
 import json
 
@@ -79,6 +89,9 @@ def evaluate(df: pd.DataFrame, proba: np.ndarray) -> dict:
     same_arc = top.cand_arc.to_numpy()[1:] == top.cand_arc.to_numpy()[:-1]
     linked = top.to_node.to_numpy()[:-1] == top.from_node.to_numpy()[1:]
     continuity = float(((same_arc | linked)[same_trip]).mean()) if same_trip.any() else np.nan
+    # Same check over real arc changes only, so staying put cannot inflate it.
+    moved = same_trip & ~same_arc
+    continuity_trans = float(linked[moved].mean()) if moved.any() else np.nan
 
     # --- observation-level metrics on labelled points ---
     L = d[d.pt_has_label]
@@ -96,4 +109,6 @@ def evaluate(df: pd.DataFrame, proba: np.ndarray) -> dict:
         log_loss=float(log_loss(y, np.clip(p, 1e-7, 1 - 1e-7))),
         candidate_miss_rate=float(1 - pt_has_cand_true.mean()),
         route_continuity=continuity,
+        route_continuity_transitions=continuity_trans,
+        n_arc_transitions=int(moved.sum()),
     )
