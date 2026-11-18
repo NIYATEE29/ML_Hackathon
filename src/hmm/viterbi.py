@@ -1,155 +1,138 @@
+"""HMM / Viterbi route reconstruction on top of classifier candidate scores.
+
+Hidden states
+    At every GPS point t the state is one of its candidate arcs (<= 12 per point, from
+    src.features.candidates). The candidate -> road-arc correspondence is kept, so a decoded
+    state IS a road segment id.
+
+Emission  (per point, per candidate)
+    emission_weight * log(max(p, p_floor)), where p is the classifier's P(candidate is the
+    travelled arc). Any per-point constant would cancel in Viterbi, so raw p is enough.
+
+Transition  (previous point's arc a  ->  this point's arc b)  -- log-scores
+    * same arc                                   : 0
+    * b starts where a ends (0 arcs in between)  : -(switch_penalty)
+    * reachable with h intermediate arcs (BFS on the directed arc graph, h <= H_eff)
+                                                 : -(switch_penalty + hop_penalty * h)
+    * immediate U-turn (b is the reverse of a)   : -reverse_penalty
+    * not reachable within H_eff hops            : -disconnected_penalty   (a finite floor, so
+                                                   decoding continues across broken links
+                                                   instead of failing)
+    H_eff = max_hops + hops_per_sec * (dt - 1), capped at BFS_DEPTH: a longer time gap lets the
+    vehicle cover more arcs.  If dt > gap_reset_s the transition term is dropped (all zeros),
+    i.e. the chain restarts from the classifier alone.
+
+Missing candidates
+    A point with no candidate gets no decoded arc (-1); the chain bridges over it using the
+    elapsed time between the neighbouring decoded points.
+"""
+from dataclasses import asdict, dataclass
+
 import numpy as np
-import networkx as nx
-from typing import Dict, List, Optional, Tuple
+import pandas as pd
 
-class PathSnapHMMDecoder:
-    """
-    Hidden Markov Model (HMM) + Viterbi route reconstruction engine.
-    Snaps noisy observation sequences to continuous graph paths:
-      - Hidden states: Candidate road arcs at each time step.
-      - Emission: Calibrated classifier probability + spatial distance likelihood.
-      - Transition: Network shortest-path distance vs. GPS travel distance.
-      - Robustness: Epsilon floor for graph discontinuities + large time gap handling.
-    """
-    def __init__(
-        self,
-        nodes: np.ndarray,
-        arcs: np.ndarray,
-        sigma_z: float = 12.0,  # GPS noise standard deviation in meters
-        beta: float = 8.0,       # Transition distance penalty scale in meters
-        eps_floor: float = 1e-6 # Probability floor for disconnected components
-    ):
-        self.nodes = nodes
-        self.arcs = arcs
-        self.sigma_z = sigma_z
-        self.beta = beta
-        self.eps_floor = eps_floor
-        self.log_eps_floor = float(np.log(eps_floor))
-        self._source_cache: Dict[int, Dict[int, float]] = {}
+BFS_DEPTH = 10
 
-        # Build directed NetworkX graph for topology & shortest path lookups
-        self.G = nx.DiGraph()
-        for idx, (u, v) in enumerate(arcs):
-            u_pt = nodes[u]
-            v_pt = nodes[v]
-            # Euclidean distance in degrees scaled roughly to meters (or local metric)
-            length = np.sqrt(np.sum((v_pt - u_pt) ** 2)) * 111000.0
-            self.G.add_edge(u, v, arc_id=idx, weight=length)
 
-    def compute_network_distance(self, from_arc: int, to_arc: int) -> float:
-        """
-        Computes the shortest path distance in the road network
-        from the end of from_arc to the start of to_arc (with neighborhood caching).
-        """
-        if from_arc == to_arc:
-            return 0.0
+@dataclass
+class HMMParams:
+    emission_weight: float = 1.0
+    p_floor: float = 1e-4
+    switch_penalty: float = 0.5
+    hop_penalty: float = 0.5
+    reverse_penalty: float = 3.0
+    disconnected_penalty: float = 6.0
+    max_hops: int = 2
+    hops_per_sec: float = 0.5
+    gap_reset_s: float = 30.0
 
-        u_end = int(self.arcs[from_arc, 1])
-        v_start = int(self.arcs[to_arc, 0])
+    def as_dict(self):
+        return asdict(self)
 
-        if u_end == v_start:
-            return 0.0  # Directly connected consecutive arcs
 
-        if u_end not in self._source_cache:
-            try:
-                self._source_cache[u_end] = nx.single_source_dijkstra_path_length(
-                    self.G, u_end, cutoff=200.0, weight="weight"
-                )
-            except Exception:
-                self._source_cache[u_end] = {}
+class ArcGraph:
+    """Directed node graph of one trip's arcs with memoised bounded BFS."""
 
-        return self._source_cache[u_end].get(v_start, 500.0)
+    def __init__(self, arcs: np.ndarray, n_nodes: int):
+        order = np.argsort(arcs[:, 0], kind="stable")
+        self.dst = arcs[order, 1]
+        self.ptr = np.zeros(n_nodes + 1, dtype=np.int64)
+        np.add.at(self.ptr, arcs[:, 0] + 1, 1)
+        self.ptr = np.cumsum(self.ptr)
+        self._memo: dict[int, dict[int, int]] = {}
 
-    def decode(
-        self,
-        candidate_lists: List[List[int]],
-        candidate_probs: List[List[float]],
-        candidate_dists: List[List[float]],
-        gps_xy: np.ndarray,
-        time_deltas: np.ndarray
-    ) -> List[int]:
-        """
-        Viterbi dynamic programming recurrence to find the globally optimal sequence of arcs.
-        """
-        T = len(candidate_lists)
-        if T == 0:
-            return []
+    def hops_from(self, node: int) -> dict[int, int]:
+        """node -> number of arcs on the shortest directed path from `node`, up to BFS_DEPTH."""
+        hit = self._memo.get(node)
+        if hit is not None:
+            return hit
+        dist, frontier = {node: 0}, [node]
+        for d in range(1, BFS_DEPTH + 1):
+            nxt = []
+            for u in frontier:
+                for v in self.dst[self.ptr[u]:self.ptr[u + 1]]:
+                    v = int(v)
+                    if v not in dist:
+                        dist[v] = d; nxt.append(v)
+            if not nxt:
+                break
+            frontier = nxt
+        self._memo[node] = dist
+        return dist
 
-        # Forward DP tables
-        V = []
-        backpointers = []
 
-        # 1. Initialization (t = 0)
-        c0 = candidate_lists[0]
-        p0 = candidate_probs[0]
-        d0 = candidate_dists[0]
-        v0 = np.zeros(len(c0))
-
-        for i in range(len(c0)):
-            # Log emission = ln(P_classifier) - dist^2 / (2 * sigma^2)
-            prob_clf = max(1e-5, p0[i])
-            spatial_term = -(d0[i] ** 2) / (2.0 * (self.sigma_z ** 2))
-            v0[i] = np.log(prob_clf) + spatial_term
-
-        V.append(v0)
-        backpointers.append(np.zeros(len(c0), dtype=int))
-
-        # 2. Viterbi Forward Recurrence (t = 1 to T-1)
-        for t in range(1, T):
-            prev_cands = candidate_lists[t - 1]
-            curr_cands = candidate_lists[t]
-            curr_probs = candidate_probs[t]
-            curr_dists = candidate_dists[t]
-
-            # Euclidean GPS displacement
-            gps_step_dist = float(np.linalg.norm(gps_xy[t] - gps_xy[t - 1]))
-            dt = time_deltas[t]
-
-            vt = np.full(len(curr_cands), -np.inf)
-            bp_t = np.zeros(len(curr_cands), dtype=int)
-
-            if dt > 30.0:
-                # Reset transition penalty after large time gaps (O(1) transition)
-                best_prev_idx = int(np.argmax(V[t - 1]))
-                best_prev_val = V[t - 1][best_prev_idx]
-                for j, c_j in enumerate(curr_cands):
-                    prob_clf = max(1e-5, curr_probs[j])
-                    spatial_term = -(curr_dists[j] ** 2) / (2.0 * (self.sigma_z ** 2))
-                    vt[j] = best_prev_val + np.log(prob_clf) + spatial_term
-                    bp_t[j] = best_prev_idx
+def _transition(prev_arc, prev_from, prev_to, cur_arc, cur_from, cur_to, graph, h_eff, P: HMMParams):
+    """Log-score matrix [len(prev), len(cur)]."""
+    T = np.empty((len(prev_arc), len(cur_arc)))
+    for i in range(len(prev_arc)):
+        reach = graph.hops_from(int(prev_to[i]))
+        for j in range(len(cur_arc)):
+            if prev_arc[i] == cur_arc[j]:
+                T[i, j] = 0.0
+            elif cur_from[j] == prev_to[i] and cur_to[j] == prev_from[i]:
+                T[i, j] = -P.reverse_penalty
             else:
-                for j, c_j in enumerate(curr_cands):
-                    prob_clf = max(1e-5, curr_probs[j])
-                    spatial_term = -(curr_dists[j] ** 2) / (2.0 * (self.sigma_z ** 2))
-                    log_emission = np.log(prob_clf) + spatial_term
+                h = reach.get(int(cur_from[j]))
+                T[i, j] = -(P.switch_penalty + P.hop_penalty * h) if (h is not None and h <= h_eff) else -P.disconnected_penalty
+    return T
 
-                    best_val = -np.inf
-                    best_prev_idx = 0
 
-                    for i, c_i in enumerate(prev_cands):
-                        net_dist = self.compute_network_distance(c_i, c_j)
-                        diff = abs(net_dist - gps_step_dist)
-                        # Exponential transition likelihood: ln(max(eps, exp(-diff/beta)))
-                        log_trans = max(self.log_eps_floor, -diff / self.beta)
+def decode_trip(cands: pd.DataFrame, graph: ArcGraph, params: HMMParams | None = None) -> pd.DataFrame:
+    """Viterbi decode one trip.
 
-                        score = V[t - 1][i] + log_trans
-                        if score > best_val:
-                            best_val = score
-                            best_prev_idx = i
+    cands: candidate rows of ONE trip with columns pt, cand_arc, from_node, to_node, p, log_dt_prev.
+    Returns one row per decoded point: pt, cand_arc, from_node, to_node (points without
+    candidates are absent).
+    """
+    P = params or HMMParams()
+    cands = cands.sort_values(["pt", "cand_arc"], kind="stable")
+    pts = cands["pt"].to_numpy()
+    starts = np.flatnonzero(np.r_[True, pts[1:] != pts[:-1]])
+    ends = np.r_[starts[1:], len(pts)]
+    arc, fr, to = (cands[c].to_numpy() for c in ("cand_arc", "from_node", "to_node"))
+    emis = P.emission_weight * np.log(np.maximum(cands["p"].to_numpy(), P.p_floor))
+    dt_prev = np.expm1(cands["log_dt_prev"].to_numpy())
 
-                    vt[j] = best_val + log_emission
-                    bp_t[j] = best_prev_idx
+    n = len(starts)
+    delta = [emis[starts[0]:ends[0]]]
+    back = []
+    for k in range(1, n):
+        s0, e0, s1, e1 = starts[k - 1], ends[k - 1], starts[k], ends[k]
+        skipped = int(pts[s1] - pts[s0])
+        dt = dt_prev[s1] * skipped
+        if dt > P.gap_reset_s:
+            T = np.zeros((e0 - s0, e1 - s1))
+        else:
+            h_eff = min(BFS_DEPTH, P.max_hops + int(P.hops_per_sec * max(0.0, dt - 1.0)))
+            T = _transition(arc[s0:e0], fr[s0:e0], to[s0:e0], arc[s1:e1], fr[s1:e1], to[s1:e1], graph, h_eff, P)
+        score = delta[-1][:, None] + T
+        bp = score.argmax(axis=0)
+        delta.append(score[bp, np.arange(e1 - s1)] + emis[s1:e1])
+        back.append(bp)
 
-            V.append(vt)
-            backpointers.append(bp_t)
-
-        # 3. Backtracking for Global Optimal Sequence
-        opt_seq_indices = [int(np.argmax(V[-1]))]
-        for t in range(T - 1, 0, -1):
-            prev_idx = backpointers[t][opt_seq_indices[-1]]
-            opt_seq_indices.append(prev_idx)
-
-        opt_seq_indices.reverse()
-        best_route = [candidate_lists[t][opt_seq_indices[t]] for t in range(T)]
-
-        return best_route
+    choice = np.empty(n, dtype=int)
+    choice[-1] = int(delta[-1].argmax())
+    for k in range(n - 1, 0, -1):
+        choice[k - 1] = back[k - 1][choice[k]]
+    rows = starts + choice
+    return pd.DataFrame({"pt": pts[rows], "cand_arc": arc[rows], "from_node": fr[rows], "to_node": to[rows]})

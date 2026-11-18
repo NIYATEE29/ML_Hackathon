@@ -1,0 +1,11 @@
+{
+ "emission_weight": 0.31302558818102144,
+ "p_floor": 0.0001,
+ "switch_penalty": 1.406138632302764,
+ "hop_penalty": 1.3302046948472888,
+ "reverse_penalty": 6.590470055401264,
+ "disconnected_penalty": 14.823646881097094,
+ "max_hops": 5,
+ "hops_per_sec": 1.1681349014268176,
+ "gap_reset_s": 30.0
+}
