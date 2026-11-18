@@ -93,14 +93,18 @@ def label_points(P: np.ndarray, N: np.ndarray, arcs: np.ndarray, route: np.ndarr
     return true_arc, true_d
 
 
-def build_trip_table(trip: Trip) -> tuple[pd.DataFrame, dict]:
+def build_trip_table(trip: Trip, with_labels: bool = True) -> tuple[pd.DataFrame, dict]:
+    """with_labels=False builds candidates + features only (no route needed): the inference path."""
     P = trip.track[["x", "y"]].to_numpy()
     t = trip.track["t"].to_numpy()
     N = trip.nodes[["x", "y"]].to_numpy()
     arcs = trip.arcs.to_numpy().astype(int)
     n, n_arcs = len(P), len(arcs)
 
-    true_arc, true_d = label_points(P, N, arcs, trip.route)
+    if with_labels:
+        true_arc, true_d = label_points(P, N, arcs, trip.route)
+    else:
+        true_arc, true_d = np.full(n, -1, dtype=int), np.full(n, np.nan)
 
     # ---- candidate generation -------------------------------------------------
     pts, aidx = _densify(N, arcs, DENSIFY_STEP_M)

@@ -50,12 +50,14 @@ def list_trips(partition: str, raw_dir: Path = RAW_DIR) -> list[str]:
     return sorted(p.name for p in (raw_dir / partition).iterdir() if p.is_dir())
 
 
-def load_trip(partition: str, trip_id: str, raw_dir: Path = RAW_DIR) -> Trip:
+def load_trip(partition: str, trip_id: str, raw_dir: Path = RAW_DIR, with_route: bool = True) -> Trip:
+    """with_route=False never opens the .route file (inference must not see ground truth)."""
     d = raw_dir / partition / trip_id
     track = _read(d / f"{trip_id}.track", ["lon", "lat", "t"])
     tf = _local_transformer(track["lon"].mean(), track["lat"].mean())
     track = _add_xy(track, tf)
     nodes = _add_xy(_read(d / f"{trip_id}.nodes", ["lon", "lat"]), tf)
     arcs = _read(d / f"{trip_id}.arcs", ["from_node", "to_node"], dtype=int)
-    route = _read(d / f"{trip_id}.route", ["arc_id"], dtype=int)["arc_id"].to_numpy()
+    route = (_read(d / f"{trip_id}.route", ["arc_id"], dtype=int)["arc_id"].to_numpy()
+             if with_route else np.empty(0, dtype=int))
     return Trip(trip_id, partition, track, nodes, arcs, route)
