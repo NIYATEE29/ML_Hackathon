@@ -6,6 +6,7 @@ Each trip directory holds four whitespace-separated, header-less files:
   .arcs   : from_node, to_node  (row index = arc_id)
   .route  : arc_id              (reference route, chronological)
 """
+
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -13,7 +14,7 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
-from src.config import RAW_DIR, RAW_DATA_DIR
+from src.config import RAW_DATA_DIR, RAW_DIR
 
 
 def _local_transformer(lon0: float, lat0: float) -> Transformer:
@@ -30,10 +31,10 @@ def _local_transformer(lon0: float, lat0: float) -> Transformer:
 class Trip:
     trip_id: str
     partition: str
-    track: pd.DataFrame   # lon, lat, t, x, y
-    nodes: pd.DataFrame   # lon, lat, x, y
-    arcs: pd.DataFrame    # from_node, to_node
-    route: np.ndarray     # arc ids
+    track: pd.DataFrame  # lon, lat, t, x, y
+    nodes: pd.DataFrame  # lon, lat, x, y
+    arcs: pd.DataFrame  # from_node, to_node
+    route: np.ndarray  # arc ids
 
 
 def _read(path: Path, names, dtype=None) -> pd.DataFrame:
@@ -74,14 +75,3 @@ def load_trip(partition: str, trip_id: str, raw_dir: Path = RAW_DIR, with_route:
     else:
         route = np.empty(0, dtype=int)
     return Trip(trip_id, partition, track, nodes, arcs, route)
-
-
-def load_trip_data(trip_id: str, split: str = "train", raw_dir: Path = RAW_DIR) -> dict:
-    """Dictionary-based loader compatible with candidate extraction and map pipelines."""
-    t = load_trip(split, trip_id, raw_dir=raw_dir)
-    return {
-        "nodes": t.nodes[["lon", "lat"]].to_numpy(),
-        "arcs": t.arcs.to_numpy(),
-        "track": t.track[["lon", "lat", "t"]].to_numpy(),
-        "route": t.route
-    }

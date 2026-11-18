@@ -24,6 +24,7 @@ Definitions (observation = one GPS point with a reference label):
                        Judge models against that 0.8210 ceiling, not against 1.0.
                        See src/models/route_diagnostics.py for the hop-tolerant version.
 """
+
 import json
 
 import numpy as np
@@ -31,7 +32,6 @@ import pandas as pd
 from sklearn.metrics import f1_score, log_loss, precision_score, recall_score
 
 from src.config import PROCESSED_DIR, RESULTS_DIR, SEED
-from src.features.candidates import FEATURES
 
 # Train trips whose reference route does not match the GPS track (< 50% of points lie
 # within 30 m of the route): see results/tables/trip_quality.csv. Excluded from fitting/CV.
@@ -64,7 +64,9 @@ def make_folds(df: pd.DataFrame, k: int = N_FOLDS, seed: int = SEED) -> dict[str
     order = sizes.sample(frac=1.0, random_state=seed).sort_values(ascending=False, kind="stable")
     load, fold_of = np.zeros(k), {}
     for trip, n in order.items():
-        f = int(np.argmin(load)); fold_of[trip] = f; load[f] += n
+        f = int(np.argmin(load))
+        fold_of[trip] = f
+        load[f] += n
     return dict(sorted(fold_of.items()))
 
 
@@ -96,12 +98,14 @@ def evaluate(df: pd.DataFrame, proba: np.ndarray) -> dict:
     # --- observation-level metrics on labelled points ---
     L = d[d.pt_has_label]
     y, p, pred = L.label.to_numpy(), L.p.to_numpy(), L.top.to_numpy().astype(int)
-    pt_hit = L[L.top].groupby(["trip_id", "pt"]).label.max()          # top-1 correct per point
-    pt_has_cand_true = L.groupby(["trip_id", "pt"]).label.max()       # reference arc in candidates
+    pt_hit = L[L.top].groupby(["trip_id", "pt"]).label.max()  # top-1 correct per point
+    pt_has_cand_true = L.groupby(["trip_id", "pt"]).label.max()  # reference arc in candidates
     per_trip = pt_hit.groupby(level=0).mean()
     return dict(
-        n_points=int(len(pt_has_cand_true)), n_rows=int(len(L)),
-        top1_acc=float(pt_hit.mean()), top1_acc_per_trip_mean=float(per_trip.mean()),
+        n_points=int(len(pt_has_cand_true)),
+        n_rows=int(len(L)),
+        top1_acc=float(pt_hit.mean()),
+        top1_acc_per_trip_mean=float(per_trip.mean()),
         macro_f1=float(f1_score(y, pred, average="macro")),
         macro_precision=float(precision_score(y, pred, average="macro", zero_division=0)),
         macro_recall=float(recall_score(y, pred, average="macro", zero_division=0)),

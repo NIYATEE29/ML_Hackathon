@@ -30,3 +30,6 @@ Student folder
 *.log
 # API request logs
 /logs/
+
+# Optuna study database (the trial table is saved as results/logs/xgb_tuning_trials.csv)
+*.db

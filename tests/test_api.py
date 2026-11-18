@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 
 import pytest
 
@@ -11,7 +10,9 @@ pytestmark = pytest.mark.skipif(not (RAW_DIR / "student_test").exists(), reason=
 @pytest.fixture(scope="module")
 def client():
     from fastapi.testclient import TestClient
+
     from api.main import app
+
     return TestClient(app)
 
 
@@ -30,7 +31,7 @@ def test_predict_shape_and_no_ground_truth_leak(client):
     assert b["metrics"]["final"]["top1_accuracy"] >= b["metrics"]["classifier_only"]["top1_accuracy"]
     text = json.dumps(b)
     for forbidden in ("true_arc", "reference", "label", "ground"):
-        assert forbidden not in text                      # no ground truth in the response
+        assert forbidden not in text  # no ground truth in the response
 
 
 def test_unknown_trip_is_404_and_path_traversal_is_blocked(client):

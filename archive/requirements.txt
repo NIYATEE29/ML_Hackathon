@@ -1,0 +1,4 @@
+# extra packages used only by the archived pipelines (install on top of ../requirements.txt)
+networkx
+tqdm
+streamlit

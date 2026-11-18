@@ -56,16 +56,16 @@ Known problem trips (decide handling in the EDA, and log the decision):
 
 Candidate features (examples): point-to-arc distance, projection position along the arc, heading vs arc bearing, speed, time gap to the previous point, arc length, distance rank among candidates, neighbour-point context, connectivity to the previous best candidate.
 
-Initial test on our data (against the route-based pseudo-label, so optimistic): a 25 m radius misses about 1% of true arcs with about 5 candidates per point. A 40 m radius misses about 0% with about 9. Re-measure with the final labelling and report the Candidate Miss Rate.
+Measured on our final labelling (train, kept trips): a 40 m radius misses about 0.2% of labelled points' true arcs, with about 6 candidates per point (see `notebooks/01_eda.ipynb`, section 7).
 
-**The 5 models (one family each):**
-1. Logistic Regression: linear/probabilistic baseline
-2. KNN (distance-weighted): instance-based
-3. Random Forest or Extra Trees: bagging ensemble
-4. LightGBM or XGBoost: boosting (likely tuning candidate)
-5. Shallow MLP: neural net (the only one with epoch-wise loss curves)
+**The 5 models we trained (one family each), all on the shared table:**
+1. Logistic Regression: linear/probabilistic baseline (`src/models/run_baselines.py`)
+2. Decision Tree: single tree, depth chosen by a depth sweep (`src/models/run_decision_tree.py`)
+3. Random Forest: bagging ensemble (`src/models/run_baselines.py`)
+4. XGBoost: boosting. Selected as the final model on CV macro F1, then tuned with Optuna (`run_baselines.py xgb`, `tune_xgb.py`)
+5. Shallow MLP: neural net, the only one with epoch-wise loss curves (`src/models/run_mlp.py`)
 
-Optional extras: Decision Tree, Gaussian NB. Avoid RBF SVM (too slow at our row counts; if used, subsample and say so).
+We did not build KNN or LightGBM. Final model: tuned XGBoost + HMM (`xgb_tuned`).
 
 **HMM/Viterbi:** hidden states = candidate arcs at each time step. Emission = the classifier probability (optionally combined with a distance term). Transition = high for the same arc or a connected arc (to_node equals next from_node), decaying with graph distance, with a small floor for disconnected pairs so decoding can continue. Handle empty candidate sets and large time gaps explicitly (reset or widen). Tune decoder parameters on train + student_test only.
 
@@ -73,27 +73,25 @@ Optional extras: Decision Tree, Gaussian NB. Avoid RBF SVM (too slow at our row 
 
 - **One shared feature table** built by one person. Everyone trains on the same table.
 - **Fixed GroupKFold folds**, grouped by trip, created once with `SEED` from `src/config.py` and saved. All models use the same folds.
-- **One shared evaluation function** (to be added in `src/models/`) returning: macro F1, Top-1 accuracy, log loss, Candidate Miss Rate, route continuity, training time, inference time. Do not write your own metric code.
+- **One shared evaluation function** (`evaluate()` in `src/models/common.py`) returning: macro F1, Top-1 accuracy, log loss, Candidate Miss Rate, route continuity, training time, inference time. Do not write your own metric code.
 - **Common interface:** `fit(X, y)` and `predict_proba(X)`. Probabilities must be usable by the HMM.
 - Results go to `results/logs/` in the same format for every model. Log the config, seed, and timings.
 - Primary model-selection metric: CV macro F1 (also look at log loss and fold stability). Never select on training accuracy.
 
-## 6. Team split (4 people)
+## 6. Who did what
 
-| Person | Models | Plus one non-model area |
+| Person | Models | Other work |
 |---|---|---|
-| A | Logistic Regression + KNN | to be assigned |
-| B | Random Forest / Extra Trees | to be assigned |
-| C | LightGBM / XGBoost | to be assigned |
-| D | MLP | to be assigned |
+| Niyatee | Logistic Regression, Random Forest, XGBoost tuning | shared pipeline (candidates, labels, features, folds, metrics), HMM/Viterbi, API, comparison, Folium maps, EDA notebook |
+| Nishitha | Decision Tree | evaluator UI, route-continuity diagnostics |
+| Abhijith | MLP | first MLP pipeline, loss curves |
+| Nikhil | XGBoost (first version, hyper-parameters) | candidate and feature experiments |
 
-Non-model areas to assign: EDA and Folium maps; candidate and feature pipeline; HMM/Viterbi; API and UI; report. (Fill names in below.)
-
-Owners: A = ____  B = ____  C = ____  D = ____
+Earlier individual pipelines are kept in `archive/` and are not used for reported results.
 
 ## 7. Repo conventions
 
-- Layout: `src/{data,features,models,hmm}`, `api/`, `ui/`, `notebooks/`, `models/` (saved weights), `results/{figures,maps,logs,tables}`, `reports/`, `tests/`.
+- Layout: `src/{data,features,models,hmm,inference,visualization}`, `api/`, `ui/`, `notebooks/`, `models/` (saved weights), `results/{figures,maps,logs,tables}`, `reports/`, `tests/`, `archive/` (earlier individual pipelines, not used for results), `docs/`.
 - Raw data is not committed (`data/raw/` is gitignored). Put the provided folders there locally.
 - Shared constants (paths, seed, CRS) live in `src/config.py`. Loading goes through `src/data/loader.py`.
 - Work on a branch per person or feature, open a PR into `main`, and keep commits small and descriptive.
