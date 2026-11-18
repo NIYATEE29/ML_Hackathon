@@ -11,7 +11,7 @@ from src.config import (
 from src.data.loader import load_trip_data
 from src.features.spatial import TripSpatialIndex
 from src.features.extract import extract_features_for_trip
-from src.hmm.viterbi import PathSnapHMMDecoder
+from src.hmm.legacy_viterbi import PathSnapHMMDecoder
 from src.models.evaluate import compute_route_continuity, compute_observation_top1
 
 class PathSnapPipeline:

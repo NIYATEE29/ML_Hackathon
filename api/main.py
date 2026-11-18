@@ -1,203 +1,71 @@
+"""PathSnap FastAPI backend (Laptop 1).
+
+Run:   uvicorn api.main:app --host 0.0.0.0 --port 8000
+Config (environment variables):
+    PATHSNAP_TRIPS_DIR   folder that directly contains the trip folders
+                         (default: data/raw/student_test; on the day: the organisers' reserved trips)
+    PATHSNAP_MODEL       saved model name in models/ (default: rf)
+Contract: api/CONTRACT.md.  Every request is logged to the console and to logs/api_requests.log.
+"""
+import logging
 import os
-import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
-import numpy as np
-from fastapi import FastAPI, HTTPException, Query
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-# Add project root to sys.path
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+from api.scoring import score_against_reference
+from api.service import PathSnap
+from src.config import ROOT
 
-from src.config import STUDENT_TEST_DIR, TRAIN_DIR, MODELS_DIR
-from src.data.loader import list_trips, load_trip_data
-from src.pipeline import PathSnapPipeline
-from src.visualization.map_builder import build_interactive_folium_map
+TRIPS_DIR = Path(os.environ.get("PATHSNAP_TRIPS_DIR", ROOT / "data" / "raw" / "student_test"))
+MODEL = os.environ.get("PATHSNAP_MODEL", "rf")
 
-app = FastAPI(
-    title="PathSnap Map-Matching & Route Reconstruction API",
-    description="Distributed FastAPI backend (Laptop 1) for real-time candidate scoring, MLP inference, and HMM Viterbi route reconstruction.",
-    version="1.0.0"
-)
+(ROOT / "logs").mkdir(exist_ok=True)
+log = logging.getLogger("pathsnap")
+log.setLevel(logging.INFO)
+if not log.handlers:
+    fmt = logging.Formatter("%(asctime)s | %(message)s", "%Y-%m-%d %H:%M:%S")
+    for h in (logging.StreamHandler(), logging.FileHandler(ROOT / "logs" / "api_requests.log")):
+        h.setFormatter(fmt); log.addHandler(h)
 
-# Enable CORS for cross-laptop communication (Laptop 1 backend <-> Laptop 2 UI)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = FastAPI(title="PathSnap API", version="1.0")
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])  # UI runs on another laptop
+service = PathSnap(TRIPS_DIR, MODEL)
 
-# Global pipeline instance (lazy-loaded or initialized on startup)
-pipeline: Optional[PathSnapPipeline] = None
 
-def get_pipeline() -> PathSnapPipeline:
-    global pipeline
-    if pipeline is None:
-        model_path = MODELS_DIR / "mlp_model.pkl"
-        pipeline = PathSnapPipeline(model_path=model_path)
-    return pipeline
-
-class TripPredictionRequest(BaseModel):
+class PredictRequest(BaseModel):
     trip_id: str
-    split: str = "student_test"
-    use_cached_features: bool = True
 
-class TripPredictionResponse(BaseModel):
-    trip_id: str
-    split: str
-    num_points: int
-    num_candidates: int
-    predicted_route: List[int]
-    classifier_predicted_route: List[int]
-    classifier_continuity: float
-    hmm_continuity: float
-    timings: Dict[str, float]
 
-class TripEvaluationResponse(BaseModel):
-    trip_id: str
-    split: str
-    num_points: int
-    classifier_top1_accuracy: Optional[float] = None
-    hmm_top1_accuracy: Optional[float] = None
-    classifier_continuity: float
-    hmm_continuity: float
-    route_jaccard_similarity: Optional[float] = None
-    timings: Dict[str, float]
+@app.middleware("http")
+async def access_log(request: Request, call_next):
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    log.info(f"{request.client.host if request.client else '-'} | {request.method} {request.url.path} | {response.status_code} | {1000 * (time.perf_counter() - t0):.0f} ms")
+    return response
 
-@app.on_event("startup")
-def startup_event():
-    try:
-        get_pipeline()
-    except Exception as e:
-        print(f"Warning: Pipeline initialization deferred: {e}")
 
-@app.get("/")
-def root():
-    pipe = get_pipeline()
-    return {
-        "status": "online",
-        "service": "PathSnap ML Reconstruction Backend",
-        "model_loaded": pipe.model is not None,
-        "supported_models": ["MLP (Multi-Layer Perceptron)"],
-        "endpoints": [
-            "GET /trips",
-            "POST /predict",
-            "POST /evaluate",
-            "GET /map/{trip_id}"
-        ]
-    }
+@app.get("/health")
+def health():
+    return {"status": "ok", "model": service.model_name, "n_trips": len(service.trip_ids())}
+
 
 @app.get("/trips")
-def get_available_trips(split: str = "student_test"):
-    """
-    Returns list of available evaluation trips without leaking ground truth route labels.
-    """
-    trips = list_trips(split)
-    trip_metadata = []
-    for tid in trips:
-        try:
-            data = load_trip_data(tid, split)
-            track = data["track"]
-            nodes = data["nodes"]
-            arcs = data["arcs"]
-            trip_metadata.append({
-                "trip_id": tid,
-                "split": split,
-                "num_gps_points": len(track),
-                "num_network_arcs": len(arcs),
-                "num_network_nodes": len(nodes),
-                "start_time_s": float(track[0, 2]) if len(track) > 0 else 0.0,
-                "duration_s": float(track[-1, 2] - track[0, 2]) if len(track) > 1 else 0.0
-            })
-        except Exception as e:
-            continue
-    return {"count": len(trip_metadata), "trips": trip_metadata}
+def trips():
+    return {"trips": service.list_trips()}
 
-@app.post("/predict", response_model=TripPredictionResponse)
-def predict_route(req: TripPredictionRequest):
-    """
-    Executes the full pipeline:
-      1. Dynamic candidate generation
-      2. MLP classification
-      3. HMM Viterbi decoding
-    Returns the predicted route and timing metrics.
-    """
-    pipe = get_pipeline()
-    try:
-        res = pipe.run_trip(
-            trip_id=req.trip_id,
-            split=req.split,
-            use_cached_features=req.use_cached_features
-        )
-        return TripPredictionResponse(
-            trip_id=res["trip_id"],
-            split=res["split"],
-            num_points=res["num_points"],
-            num_candidates=res["num_candidates"],
-            predicted_route=res["hmm_predicted_route"],
-            classifier_predicted_route=res["classifier_predicted_route"],
-            classifier_continuity=res["classifier_continuity"],
-            hmm_continuity=res["hmm_continuity"],
-            timings=res["timings"]
-        )
-    except FileNotFoundError as fnf:
-        raise HTTPException(status_code=404, detail=str(fnf))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
 
-@app.post("/evaluate", response_model=TripEvaluationResponse)
-def evaluate_trip(req: TripPredictionRequest):
-    """
-    Strictly Server-Side Evaluation:
-    Evaluates predictions against ground truth without exposing ground truth labels to the UI.
-    """
-    pipe = get_pipeline()
-    try:
-        res = pipe.run_trip(
-            trip_id=req.trip_id,
-            split=req.split,
-            use_cached_features=req.use_cached_features
-        )
-        return TripEvaluationResponse(
-            trip_id=res["trip_id"],
-            split=res["split"],
-            num_points=res["num_points"],
-            classifier_top1_accuracy=res.get("classifier_top1_accuracy"),
-            hmm_top1_accuracy=res.get("hmm_top1_accuracy"),
-            classifier_continuity=res["classifier_continuity"],
-            hmm_continuity=res["hmm_continuity"],
-            route_jaccard_similarity=res.get("route_jaccard_similarity"),
-            timings=res["timings"]
-        )
-    except FileNotFoundError as fnf:
-        raise HTTPException(status_code=404, detail=str(fnf))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Evaluation error: {str(e)}")
-
-@app.get("/map/{trip_id}", response_class=HTMLResponse)
-def get_trip_map(trip_id: str, split: str = "student_test"):
-    """
-    Generates an interactive Folium HTML map with the reconstructed route.
-    """
-    pipe = get_pipeline()
-    try:
-        res = pipe.run_trip(trip_id=trip_id, split=split)
-        m = build_interactive_folium_map(
-            trip_id=trip_id,
-            split=split,
-            predicted_arcs=res["hmm_predicted_route"]
-        )
-        return HTMLResponse(content=m.get_root().render())
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Map rendering error: {str(e)}")
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=False)
+@app.post("/predict")
+def predict(req: PredictRequest):
+    if req.trip_id not in service.trip_ids():
+        raise HTTPException(status_code=404, detail=f"unknown trip_id '{req.trip_id}'")
+    res = service.predict(req.trip_id)                                                    # never sees ground truth
+    metrics = score_against_reference(TRIPS_DIR, req.trip_id, res["_cands"], res["_decoded"])   # server side only
+    body = {k: v for k, v in res.items() if not k.startswith("_")}
+    body["metrics"] = metrics
+    log.info(f"predict trip={req.trip_id} model={service.model_name} points={body['n_points']} "
+             f"top1={metrics['final']['top1_accuracy'] if metrics else 'n/a'} total={body['timing_ms']['total']} ms")
+    return body
