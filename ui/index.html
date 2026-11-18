@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<!--
+  PathSnap evaluator UI.
+
+  Plain HTML + CSS + JavaScript, no build step. Leaflet is vendored in ./vendor
+  so the page works without a CDN. All behaviour lives in app.js; this file is
+  only the page structure. The UI talks to the backend through the three
+  endpoints in api/CONTRACT.md and shows only what the API returns.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PathSnap: route reconstruction</title>
+  <link rel="stylesheet" href="vendor/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Top bar: where the API lives and whether we can reach it. -->
+  <header class="topbar">
+    <div class="brand">
+      <h1>PathSnap</h1>
+      <span class="tagline">GPS map-matching &amp; route reconstruction</span>
+    </div>
+
+    <form id="api-form" class="api-form" autocomplete="off">
+      <label for="api-url">API address</label>
+      <input id="api-url" type="text" spellcheck="false" placeholder="http://localhost:8000">
+      <button type="submit" id="connect-btn" class="btn-secondary">Connect</button>
+    </form>
+
+    <!-- Colour AND text AND symbol, so the state is readable without colour. -->
+    <div id="status" class="status status-checking" role="status" aria-live="polite">
+      <span id="status-icon" class="status-icon" aria-hidden="true">…</span>
+      <span id="status-text">Checking connection…</span>
+    </div>
+  </header>
+
+  <div id="mock-banner" class="mock-banner" hidden>
+    MOCK MODE: reading the sample files in ui/mock/, not the API. Only trips 00000052 and 00000065 have mock data.
+  </div>
+
+  <main class="layout">
+
+    <!-- Left: trip picker + map. -->
+    <section class="map-section">
+      <div class="controls">
+        <label for="trip-select">Trip</label>
+        <select id="trip-select" disabled>
+          <option value="">Connect to the API first…</option>
+        </select>
+        <button type="button" id="run-btn" class="btn-primary" disabled>Run</button>
+      </div>
+
+      <div class="map-wrap">
+        <div id="map" aria-label="Map of the GPS points and reconstructed routes"></div>
+        <div id="map-message" class="map-message">Select a trip and press <strong>Run</strong>.</div>
+        <div id="tile-notice" class="tile-notice" hidden>
+          Map tiles could not be loaded (no internet?). GPS points and routes are still drawn.
+        </div>
+      </div>
+    </section>
+
+    <!-- Right: errors and results. Filled in by app.js. -->
+    <aside class="panel" aria-label="Results">
+      <div id="error-box" class="error-box" role="alert" hidden></div>
+      <div id="results">
+        <p class="placeholder">Results appear here after you run a trip.</p>
+      </div>
+    </aside>
+
+  </main>
+
+  <script src="vendor/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
