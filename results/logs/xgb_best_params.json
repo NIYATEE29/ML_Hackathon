@@ -1,0 +1,20 @@
+{
+ "params": {
+  "n_estimators": 200,
+  "max_depth": 10,
+  "learning_rate": 0.03699197382485672,
+  "subsample": 0.8780911808604259,
+  "colsample_bytree": 0.6387322148808915,
+  "min_child_weight": 1.2469770363038049,
+  "reg_lambda": 7.501182296073602,
+  "reg_alpha": 0.2481316839035101,
+  "gamma": 3.740093841528239,
+  "tree_method": "hist"
+ },
+ "cv_macro_f1_mean": 0.9421052574257857,
+ "trial": 35,
+ "n_trials": 42,
+ "n_complete": 13,
+ "seed": 42,
+ "default_trial0_cv_macro_f1": 0.9418205180188778
+}

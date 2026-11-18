@@ -46,9 +46,19 @@ MODELS = {
 }
 
 
+def _load_tuned():
+    """Best parameters found by src/models/tune_xgb.py (absent until the search has been run)."""
+    f = RESULTS_DIR / "logs" / "xgb_best_params.json"
+    return json.loads(f.read_text())["params"] if f.exists() else None
+
+
 def _xgb(p):
     from xgboost import XGBClassifier  # imported lazily so the other models do not need xgboost installed
     return XGBClassifier(objective="binary:logistic", eval_metric="logloss", n_jobs=2, random_state=SEED, **p)
+
+
+if _load_tuned():
+    MODELS["xgb_tuned"] = dict(family="Gradient boosting (trees), Bayesian-tuned", params=_load_tuned(), build=lambda p: _xgb(p))
 
 
 def fit_eval(name, tr, te):

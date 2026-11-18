@@ -24,10 +24,10 @@ LOGS = RESULTS_DIR / "logs"
 
 # Display names and a FIXED colour per model (colour follows the entity, never its rank).
 NAMES = {"logreg": "Logistic Regression", "rf": "Random Forest", "dtree": "Decision Tree",
-         "lgbm": "LightGBM", "xgb": "XGBoost", "mlp": "MLP", "knn": "KNN"}
-ORDER = ["logreg", "knn", "dtree", "rf", "lgbm", "xgb", "mlp"]          # stable plotting order
+         "lgbm": "LightGBM", "xgb": "XGBoost", "xgb_tuned": "XGBoost (tuned)", "mlp": "MLP", "knn": "KNN"}
+ORDER = ["logreg", "knn", "dtree", "rf", "lgbm", "xgb", "xgb_tuned", "mlp"]          # stable plotting order
 COLORS = {"logreg": "#2a78d6", "rf": "#eb6834", "dtree": "#1baf7a",
-          "lgbm": "#eda100", "mlp": "#e87ba4", "knn": "#008300", "xgb": "#6250d6"}
+          "lgbm": "#eda100", "mlp": "#e87ba4", "knn": "#008300", "xgb": "#6250d6", "xgb_tuned": "#3b2c9c"}
 INK, INK2, GRID, SURFACE = "#0b0b0b", "#52514e", "#e6e5e1", "#fcfcfb"
 
 
