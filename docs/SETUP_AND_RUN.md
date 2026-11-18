@@ -147,6 +147,14 @@ python -m src.hmm.run_hmm_eval          # HMM/Viterbi decoder tuning + evaluatio
 `data\processed\` is not in git, so every teammate who wants to retrain runs `build_table` first.
 Results can differ in the 3rd decimal between machines; quote one machine's numbers in the report.
 
+**EDA notebook and Folium maps** (needs `data\processed\` from `build_table` above):
+```powershell
+jupyter notebook notebooks\01_eda.ipynb          # or open it in VS Code and Run All (a few minutes)
+python -m src.visualization.maps --partition student_test --trip 00000052   # one interactive map -> results\maps\
+python -m src.visualization.maps --partition student_test --all             # all 10 trips (about 20 MB of HTML, not committed)
+```
+Opening a map HTML needs internet in the browser, to load the basemap tiles and the Leaflet library.
+
 **Which model the API serves:** the final model, `xgb_tuned` (Bayesian-tuned XGBoost + tuned HMM), is the default, so no
 setting is needed. To demo another model (restart the backend):
 ```powershell
