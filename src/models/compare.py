@@ -170,57 +170,57 @@ def fig_tradeoff(t, path):
 # --------------------------------------------------------------------------- console view
 # (title line 1, title line 2, column in the table, number format, True if higher is better)
 CONSOLE_COLUMNS = [
-    ("CV macro F1", "(mean ± std)", None, None, True),            # built from two columns, see below
+    ("CV F1", "mean±std", None, None, True),                       # built from two columns below
     ("Top-1", "student", "Student Top-1", ".4f", True),
-    ("Macro F1", "student", "Student Macro F1", ".4f", True),
-    ("Log loss", "student", "Student Log Loss", ".4f", False),
-    ("Continuity", "student", "Route Continuity", ".4f", True),
-    ("Infer.", "ms/point", "Inference (ms/point)", ".4f", False),
-    ("Train", "seconds", "Train Time (s)", ".1f", False),
+    ("F1", "student", "Student Macro F1", ".4f", True),
+    ("LogLoss", "student", "Student Log Loss", ".4f", False),
+    ("Contin.", "student", "Route Continuity", ".4f", True),
+    ("ms/pt", "infer", "Inference (ms/point)", ".4f", False),
+    ("Train s", "", "Train Time (s)", ".1f", False),
 ]
+COL_WIDTHS = [15, 8, 8, 8, 8, 8, 8]          # whole table is ~83 chars with a 19-char name column
 
 
-def format_console(t: pd.DataFrame, width: int = 100) -> str:
-    """Compact, aligned view for the terminal. The best value in each column is marked with *.
+def format_console(t: pd.DataFrame, width: int = 78) -> str:
+    """Compact, aligned view for the terminal (fits an ~85-column window).
 
     The wide Markdown table (with full configurations) is for the report and is written to
     results/tables/model_comparison.md; this view is only for reading in the terminal.
+    The best value in each column is marked with *.
     """
     import textwrap
 
-    name_w = max(len(m) for m in t.Model) + 2
-    col_w = 17
-    best = {}                                                   # column title -> best value
+    name_w = max(len(m) for m in t.Model) + 1
+    best = {}
     for title, _, col, _, higher in CONSOLE_COLUMNS:
-        values = t["CV Macro F1 (mean)"] if col is None else t[col]
-        values = values.dropna()
+        values = (t["CV Macro F1 (mean)"] if col is None else t[col]).dropna()
         best[title] = (values.max() if higher else values.min()) if len(values) else None
 
-    def cell(title, value, text):
-        mark = "*" if best[title] is not None and value == best[title] else " "
-        return f"{text}{mark}".rjust(col_w)
+    def cell(title, value, text, w):
+        mark = "*" if best[title] is not None and value == best[title] else ""
+        return f"{text}{mark}".rjust(w)
 
+    total = name_w + sum(COL_WIDTHS)
     lines = [f"{len(t)} models compared   (* = best in column)", ""]
-    lines.append("Model".ljust(name_w) + "".join(c[0].rjust(col_w) for c in CONSOLE_COLUMNS))
-    lines.append("".ljust(name_w) + "".join(c[1].rjust(col_w) for c in CONSOLE_COLUMNS))
-    lines.append("-" * (name_w + col_w * len(CONSOLE_COLUMNS)))
+    lines.append("Model".ljust(name_w) + "".join(c[0].rjust(w) for c, w in zip(CONSOLE_COLUMNS, COL_WIDTHS)))
+    lines.append("".ljust(name_w) + "".join(c[1].rjust(w) for c, w in zip(CONSOLE_COLUMNS, COL_WIDTHS)))
+    lines.append("-" * total)
     for _, r in t.iterrows():
         row = r.Model.ljust(name_w)
-        for title, _, col, fmt, _ in CONSOLE_COLUMNS:
-            if col is None:                                     # CV macro F1 shows mean ± std
+        for (title, _, col, fmt, _), w in zip(CONSOLE_COLUMNS, COL_WIDTHS):
+            if col is None:                                     # CV macro F1 shows mean±std
                 mean, std = r["CV Macro F1 (mean)"], r["CV Macro F1 (std)"]
-                text = "N/A" if pd.isna(mean) else f"{mean:.4f} ± {std:.4f}"
-                row += cell(title, mean, text)
+                row += cell(title, mean, "N/A" if pd.isna(mean) else f"{mean:.4f}±{std:.4f}", w)
             else:
                 v = r[col]
-                row += cell(title, v, "N/A" if pd.isna(v) else format(v, fmt))
+                row += cell(title, v, "N/A" if pd.isna(v) else format(v, fmt), w)
         lines.append(row)
 
     lines += ["", "Configurations"]
     for _, r in t.iterrows():
         lines += textwrap.wrap(f"{r.Model}: {r['Key Configuration']}", width=width,
                                initial_indent="  ", subsequent_indent="      ")
-    lines += ["", f"Full table for the report: {RESULTS_DIR / 'tables' / 'model_comparison.md'}"]
+    lines += ["", "Full table for the report: results/tables/model_comparison.md"]
     return "\n".join(lines)
 
 
