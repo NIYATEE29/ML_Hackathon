@@ -1,0 +1,90 @@
+{
+  "model_name": "Multi-Layer Perceptron (MLP)",
+  "algorithm_family": "Neural Networks",
+  "key_configuration": "Input(9) -> Hidden(64, ReLU) -> Hidden(32, ReLU) -> Output(1, Sigmoid), Adam, L2=1e-4",
+  "cv_top1_accuracy": 0.7548219817876769,
+  "cv_macro_f1": 0.890859223634459,
+  "cv_log_loss": 0.12087349172979585,
+  "cv_training_time_s": 242.20402946472169,
+  "cv_inference_time_s": 0.3500617027282715,
+  "fold_metrics": [
+    {
+      "macro_f1": 0.8924203514205651,
+      "precision": 0.8334945456499543,
+      "recall": 0.792281759207233,
+      "top1_accuracy": 0.8263558033451597,
+      "log_loss": 0.12671704496170333,
+      "candidate_miss_rate": null,
+      "route_continuity": null,
+      "training_time_s": 285.00373458862305,
+      "inference_time_s": 0.39185667037963867,
+      "num_candidate_rows": 298494,
+      "num_observations": 39460
+    },
+    {
+      "macro_f1": 0.9115902186675914,
+      "precision": 0.8568416073786485,
+      "recall": 0.8392109174435887,
+      "top1_accuracy": 0.8547175909203247,
+      "log_loss": 0.12161696348585575,
+      "candidate_miss_rate": null,
+      "route_continuity": null,
+      "training_time_s": 286.8742153644562,
+      "inference_time_s": 0.5012063980102539,
+      "num_candidate_rows": 366251,
+      "num_observations": 52601
+    },
+    {
+      "macro_f1": 0.8731936516035906,
+      "precision": 0.7668527737286503,
+      "recall": 0.7788268156424581,
+      "top1_accuracy": 0.553303576559836,
+      "log_loss": 0.1284653632579652,
+      "candidate_miss_rate": null,
+      "route_continuity": null,
+      "training_time_s": 284.5796961784363,
+      "inference_time_s": 0.5515830516815186,
+      "num_candidate_rows": 346519,
+      "num_observations": 52201
+    },
+    {
+      "macro_f1": 0.8937362123780221,
+      "precision": 0.8060398175324446,
+      "recall": 0.8166087486117579,
+      "top1_accuracy": 0.751095070639768,
+      "log_loss": 0.10648783699706837,
+      "candidate_miss_rate": null,
+      "route_continuity": null,
+      "training_time_s": 182.4845883846283,
+      "inference_time_s": 0.16963696479797363,
+      "num_candidate_rows": 250706,
+      "num_observations": 32418
+    },
+    {
+      "macro_f1": 0.8833556841025256,
+      "precision": 0.8005130228887135,
+      "recall": 0.785834194214876,
+      "top1_accuracy": 0.7886378674732961,
+      "log_loss": 0.12108024994638654,
+      "candidate_miss_rate": null,
+      "route_continuity": null,
+      "training_time_s": 172.0779128074646,
+      "inference_time_s": 0.13602542877197266,
+      "num_candidate_rows": 271274,
+      "num_observations": 31737
+    }
+  ],
+  "student_test_metrics": {
+    "macro_f1": 0.8574739735446508,
+    "precision": 0.7041262394711589,
+    "recall": 0.7941795442246408,
+    "top1_accuracy": 0.7105949895615866,
+    "log_loss": 0.16407895364011058,
+    "candidate_miss_rate": null,
+    "route_continuity": null,
+    "training_time_s": 236.81293940544128,
+    "inference_time_s": 0.14686036109924316,
+    "num_candidate_rows": 160129,
+    "num_observations": 19160
+  }
+}

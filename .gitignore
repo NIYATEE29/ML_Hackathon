@@ -22,3 +22,9 @@ credentials*.json
 .DS_Store
 .idea/
 .vscode/
+
+# Local raw datasets
+Student_Folder/
+Student folder
+*.parquet
+*.log

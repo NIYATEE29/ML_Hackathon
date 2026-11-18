@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
-from src.config import RAW_DIR
+from src.config import RAW_DIR, RAW_DATA_DIR
 
 
 def _local_transformer(lon0: float, lat0: float) -> Transformer:
@@ -46,16 +46,38 @@ def _add_xy(df: pd.DataFrame, tf: Transformer) -> pd.DataFrame:
     return df
 
 
+def _resolve_raw_dir(raw_dir: Path, partition: str) -> Path:
+    if (raw_dir / partition).exists():
+        return raw_dir
+    if (RAW_DATA_DIR / partition).exists():
+        return RAW_DATA_DIR
+    return raw_dir
+
+
 def list_trips(partition: str, raw_dir: Path = RAW_DIR) -> list[str]:
-    return sorted(p.name for p in (raw_dir / partition).iterdir() if p.is_dir())
+    base = _resolve_raw_dir(raw_dir, partition)
+    return sorted(p.name for p in (base / partition).iterdir() if p.is_dir())
 
 
 def load_trip(partition: str, trip_id: str, raw_dir: Path = RAW_DIR) -> Trip:
-    d = raw_dir / partition / trip_id
+    base = _resolve_raw_dir(raw_dir, partition)
+    d = base / partition / trip_id
     track = _read(d / f"{trip_id}.track", ["lon", "lat", "t"])
     tf = _local_transformer(track["lon"].mean(), track["lat"].mean())
     track = _add_xy(track, tf)
     nodes = _add_xy(_read(d / f"{trip_id}.nodes", ["lon", "lat"]), tf)
     arcs = _read(d / f"{trip_id}.arcs", ["from_node", "to_node"], dtype=int)
-    route = _read(d / f"{trip_id}.route", ["arc_id"], dtype=int)["arc_id"].to_numpy()
+    route_file = d / f"{trip_id}.route"
+    route = _read(route_file, ["arc_id"], dtype=int)["arc_id"].to_numpy() if route_file.exists() else np.array([], dtype=int)
     return Trip(trip_id, partition, track, nodes, arcs, route)
+
+
+def load_trip_data(trip_id: str, split: str = "train", raw_dir: Path = RAW_DIR) -> dict:
+    """Dictionary-based loader compatible with candidate extraction and map pipelines."""
+    t = load_trip(split, trip_id, raw_dir=raw_dir)
+    return {
+        "nodes": t.nodes[["lon", "lat"]].to_numpy(),
+        "arcs": t.arcs.to_numpy(),
+        "track": t.track[["lon", "lat", "t"]].to_numpy(),
+        "route": t.route
+    }
