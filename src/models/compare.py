@@ -167,19 +167,83 @@ def fig_tradeoff(t, path):
     fig.tight_layout(); fig.savefig(path, dpi=160); plt.close(fig)
 
 
+# --------------------------------------------------------------------------- console view
+# (title line 1, title line 2, column in the table, number format, True if higher is better)
+CONSOLE_COLUMNS = [
+    ("CV macro F1", "(mean ± std)", None, None, True),            # built from two columns, see below
+    ("Top-1", "student", "Student Top-1", ".4f", True),
+    ("Macro F1", "student", "Student Macro F1", ".4f", True),
+    ("Log loss", "student", "Student Log Loss", ".4f", False),
+    ("Continuity", "student", "Route Continuity", ".4f", True),
+    ("Infer.", "ms/point", "Inference (ms/point)", ".4f", False),
+    ("Train", "seconds", "Train Time (s)", ".1f", False),
+]
+
+
+def format_console(t: pd.DataFrame, width: int = 100) -> str:
+    """Compact, aligned view for the terminal. The best value in each column is marked with *.
+
+    The wide Markdown table (with full configurations) is for the report and is written to
+    results/tables/model_comparison.md; this view is only for reading in the terminal.
+    """
+    import textwrap
+
+    name_w = max(len(m) for m in t.Model) + 2
+    col_w = 17
+    best = {}                                                   # column title -> best value
+    for title, _, col, _, higher in CONSOLE_COLUMNS:
+        values = t["CV Macro F1 (mean)"] if col is None else t[col]
+        values = values.dropna()
+        best[title] = (values.max() if higher else values.min()) if len(values) else None
+
+    def cell(title, value, text):
+        mark = "*" if best[title] is not None and value == best[title] else " "
+        return f"{text}{mark}".rjust(col_w)
+
+    lines = [f"{len(t)} models compared   (* = best in column)", ""]
+    lines.append("Model".ljust(name_w) + "".join(c[0].rjust(col_w) for c in CONSOLE_COLUMNS))
+    lines.append("".ljust(name_w) + "".join(c[1].rjust(col_w) for c in CONSOLE_COLUMNS))
+    lines.append("-" * (name_w + col_w * len(CONSOLE_COLUMNS)))
+    for _, r in t.iterrows():
+        row = r.Model.ljust(name_w)
+        for title, _, col, fmt, _ in CONSOLE_COLUMNS:
+            if col is None:                                     # CV macro F1 shows mean ± std
+                mean, std = r["CV Macro F1 (mean)"], r["CV Macro F1 (std)"]
+                text = "N/A" if pd.isna(mean) else f"{mean:.4f} ± {std:.4f}"
+                row += cell(title, mean, text)
+            else:
+                v = r[col]
+                row += cell(title, v, "N/A" if pd.isna(v) else format(v, fmt))
+        lines.append(row)
+
+    lines += ["", "Configurations"]
+    for _, r in t.iterrows():
+        lines += textwrap.wrap(f"{r.Model}: {r['Key Configuration']}", width=width,
+                               initial_indent="  ", subsequent_indent="      ")
+    lines += ["", f"Full table for the report: {RESULTS_DIR / 'tables' / 'model_comparison.md'}"]
+    return "\n".join(lines)
+
+
 def main():
     summaries = load_summaries()
     if not summaries:
         raise SystemExit(f"no *_summary.json found in {LOGS}")
     t = build_table(summaries)
-    (RESULTS_DIR / "tables").mkdir(parents=True, exist_ok=True); (RESULTS_DIR / "figures").mkdir(parents=True, exist_ok=True)
-    t.drop(columns="key").to_csv(RESULTS_DIR / "tables" / "model_comparison.csv", index=False)
-    (RESULTS_DIR / "tables" / "model_comparison.md").write_text(to_markdown(t))
-    folds = {k: load_folds(k, s) for k, s in summaries.items()}
-    F = RESULTS_DIR / "figures"
-    fig_cv_macro_f1(t, folds, F / "cmp_cv_macro_f1.png"); fig_student(t, F / "cmp_student_top1_f1.png")
-    fig_log_loss(t, F / "cmp_log_loss.png"); fig_tradeoff(t, F / "cmp_f1_vs_inference.png")
-    print(f"{len(t)} models: {', '.join(t.Model)}\n"); print(to_markdown(t))
+
+    tables_dir, figures_dir = RESULTS_DIR / "tables", RESULTS_DIR / "figures"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    figures_dir.mkdir(parents=True, exist_ok=True)
+
+    t.drop(columns="key").to_csv(tables_dir / "model_comparison.csv", index=False)
+    (tables_dir / "model_comparison.md").write_text(to_markdown(t))
+
+    folds = {key: load_folds(key, summary) for key, summary in summaries.items()}
+    fig_cv_macro_f1(t, folds, figures_dir / "cmp_cv_macro_f1.png")
+    fig_student(t, figures_dir / "cmp_student_top1_f1.png")
+    fig_log_loss(t, figures_dir / "cmp_log_loss.png")
+    fig_tradeoff(t, figures_dir / "cmp_f1_vs_inference.png")
+
+    print(format_console(t))
 
 
 if __name__ == "__main__":
