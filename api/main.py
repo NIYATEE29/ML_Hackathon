@@ -4,7 +4,7 @@ Run:   uvicorn api.main:app --host 0.0.0.0 --port 8000
 Config (environment variables):
     PATHSNAP_TRIPS_DIR   folder that directly contains the trip folders
                          (default: data/raw/student_test; on the day: the organisers' reserved trips)
-    PATHSNAP_MODEL       saved model name in models/ (default: rf)
+    PATHSNAP_MODEL       saved model name in models/ (default: xgb_tuned)
 Contract: api/CONTRACT.md.  Every request is logged to the console and to logs/api_requests.log.
 """
 import logging
@@ -21,7 +21,7 @@ from api.service import PathSnap
 from src.config import ROOT
 
 TRIPS_DIR = Path(os.environ.get("PATHSNAP_TRIPS_DIR", ROOT / "data" / "raw" / "student_test"))
-MODEL = os.environ.get("PATHSNAP_MODEL", "rf")
+MODEL = os.environ.get("PATHSNAP_MODEL", "xgb_tuned")
 
 (ROOT / "logs").mkdir(exist_ok=True)
 log = logging.getLogger("pathsnap")

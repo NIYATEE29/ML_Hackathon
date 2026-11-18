@@ -38,7 +38,7 @@ def arcs_to_paths(arc_ids, arcs: np.ndarray, nodes: pd.DataFrame) -> list[list[l
 
 
 class PathSnap:
-    def __init__(self, trips_dir: Path, model_name: str = "rf", models_dir: Path = MODELS_DIR):
+    def __init__(self, trips_dir: Path, model_name: str = "xgb_tuned", models_dir: Path = MODELS_DIR):
         self.trips_dir = Path(trips_dir)
         self.partition, self.raw_dir = self.trips_dir.name, self.trips_dir.parent
         self.model_name = model_name

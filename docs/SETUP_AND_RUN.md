@@ -70,7 +70,7 @@ Open **two** PowerShell windows in the repo root.
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 Wait for "Application startup complete". Check http://localhost:8000/health in a browser; you should see
-`{"status":"ok","model":"rf","n_trips":10}`.
+`{"status":"ok","model":"xgb_tuned","n_trips":10}`.
 
 **Window 2 - UI**
 ```powershell
@@ -138,6 +138,7 @@ You do NOT need this for the demo. Order matters, and each step needs the one be
 ```powershell
 python -m src.features.build_table      # candidates + 27 features -> data\processed\*.parquet (takes a few minutes)
 python -m src.models.run_baselines      # Logistic Regression + Random Forest
+python -m src.models.run_baselines xgb  # XGBoost (default settings)
 python -m src.models.run_decision_tree  # Decision Tree
 python -m src.models.run_mlp            # MLP (shared pipeline)
 python -m src.models.compare            # comparison table + figures -> results\tables, results\figures
@@ -146,13 +147,18 @@ python -m src.hmm.run_hmm_eval          # HMM/Viterbi decoder tuning + evaluatio
 `data\processed\` is not in git, so every teammate who wants to retrain runs `build_table` first.
 Results can differ in the 3rd decimal between machines; quote one machine's numbers in the report.
 
-**Switching the model the API serves** (after the best model is chosen; restart the backend):
+**Which model the API serves:** the final model, `xgb_tuned` (Bayesian-tuned XGBoost + tuned HMM), is the default, so no
+setting is needed. To demo another model (restart the backend):
 ```powershell
-$env:PATHSNAP_MODEL = "xgboost"      # the name of the file in models\ without .joblib
+$env:PATHSNAP_MODEL = "rf"      # any name in models\ that also has models\hmm_params_<name>.json
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
-The HMM settings are read from `models\hmm_params_<name>.json`, so run `python -m src.hmm.run_hmm_eval`
-for that model first.
+Models that have decoder settings: `rf`, `xgb_tuned`. For another model, first run
+`python -m src.hmm.run_hmm_eval --model <name>`.
+
+**Re-running the XGBoost tuning** (about 40 minutes; resumable): `python -m src.models.tune_xgb search --minutes 8`
+(repeat until enough trials), then `python -m src.models.tune_xgb finalize`, then
+`python -m src.hmm.run_hmm_eval --model xgb_tuned --trials 30`.
 
 ---
 
